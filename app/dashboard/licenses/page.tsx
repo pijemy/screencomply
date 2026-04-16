@@ -7,44 +7,6 @@ import { saveLicenseVerification, getLicenseVerifications } from "@/lib/store";
 import type { LicenseVerificationRow } from "@/lib/store";
 import type { LicenseStatus } from "@/lib/types";
 
-// Mock license database for known patterns
-const MOCK_LICENSES: Record<string, {
-  businessName: string;
-  status: LicenseStatus;
-  licenseType: string;
-  endorsements: string[];
-  disciplinary: string[];
-}> = {
-  "ES0000001": {
-    businessName: "ABC Screen Enclosures LLC",
-    status: "active",
-    licenseType: "Structure - Screen Enclosure Specialty",
-    endorsements: ["Screen Enclosure", "Aluminum Structures"],
-    disciplinary: [],
-  },
-  "ES0000002": {
-    businessName: "Central Florida Screens Inc.",
-    status: "active",
-    licenseType: "Structure - Screen Enclosure Specialty",
-    endorsements: ["Screen Enclosure"],
-    disciplinary: [],
-  },
-  "CRC1327293": {
-    businessName: "Orlando Building Solutions LLC",
-    status: "active",
-    licenseType: "Certified General Contractor",
-    endorsements: ["General Contractor", "Building Contractor"],
-    disciplinary: [],
-  },
-  "CRC0000001": {
-    businessName: "Sunshine Contractors Group",
-    status: "expired",
-    licenseType: "Certified Building Contractor",
-    endorsements: ["Building Contractor"],
-    disciplinary: ["License suspended 2024-01-15 for insurance lapse. Reinstated 2024-03-20."],
-  },
-};
-
 function getLicenseStatusColor(status: LicenseStatus): string {
   switch (status) {
     case "active":
@@ -79,10 +41,24 @@ function getLicenseStatusDot(status: LicenseStatus): string {
   }
 }
 
+function sourceLabel(source: string): { label: string; className: string } {
+  switch (source) {
+    case "statecred":
+      return { label: "StateCred API", className: "bg-emerald-100 text-emerald-800" };
+    case "dbpr_csv":
+      return { label: "DBPR Records", className: "bg-blue-100 text-blue-800" };
+    case "mock":
+      return { label: "Mock Data", className: "bg-secondary text-secondary-foreground" };
+    default:
+      return { label: source, className: "bg-gray-100 text-gray-700" };
+  }
+}
+
 export default function LicensesPage() {
   const [licenseNumber, setLicenseNumber] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [result, setResult] = useState<LicenseVerificationRow | null>(null);
+  const [resultSource, setResultSource] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<LicenseVerificationRow[]>([]);
 
@@ -91,111 +67,78 @@ export default function LicensesPage() {
     setHistory(getLicenseVerifications());
   });
 
-  function validateLicenseFormat(input: string): { valid: boolean; error?: string } {
-    const trimmed = input.trim().toUpperCase();
-    if (!trimmed) {
-      return { valid: false, error: "Please enter a license number." };
-    }
-    if (trimmed.length < 3) {
-      return { valid: false, error: "License number is too short." };
-    }
-    // Valid patterns: ES prefix (screen enclosure specialty), CRC prefix (certified contractor), or numeric
-    if (/^ES\d{4,}$/.test(trimmed)) return { valid: true };
-    if (/^CRC\d{4,}$/.test(trimmed)) return { valid: true };
-    if (/^\d{5,}$/.test(trimmed)) return { valid: true };
-    // Also allow mixed format like letters + numbers
-    if (/^[A-Z]{1,4}\d{4,}$/.test(trimmed)) return { valid: true };
-    return { valid: false, error: "Invalid format. License numbers typically start with ES, CRC, or be numeric (e.g., ES0000001, CRC1327293)." };
-  }
-
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setResult(null);
+    setResultSource("");
 
     const trimmed = licenseNumber.trim().toUpperCase();
-    const validation = validateLicenseFormat(trimmed);
-    if (!validation.valid) {
-      setError(validation.error || "Invalid license number format.");
+    if (!trimmed) {
+      setError("Please enter a license number.");
       return;
     }
 
     setVerifying(true);
 
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    try {
+      const response = await fetch("/api/verify-license", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ licenseNumber: trimmed }),
+      });
 
-    const now = new Date().toISOString();
-    const mock = MOCK_LICENSES[trimmed];
+      const data = await response.json();
 
-    let record: LicenseVerificationRow;
+      if (!data.success) {
+        setError(data.error || "Verification failed.");
+        setVerifying(false);
+        return;
+      }
 
-    if (mock) {
-      // Known mock license — return real-seeming data
-      const issueDate = "2023-01-15";
-      const expDate = mock.status === "expired" ? "2025-01-15" : "2027-01-15";
-      record = {
+      const license = data.license;
+      const src = data.source || "mock";
+      setResultSource(src);
+
+      const record: LicenseVerificationRow = {
         id: "",
         user_id: "",
-        license_number: trimmed,
-        business_name: mock.businessName,
-        status: mock.status,
-        license_type: mock.licenseType,
-        issue_date: issueDate,
-        expiration_date: expDate,
-        specialty_endorsements: mock.endorsements,
-        disciplinary_actions: mock.disciplinary,
-        verified_at: now,
-        source: "FL DBPR",
-        created_at: now,
+        license_number: license.licenseNumber,
+        business_name: license.businessName || "Unknown",
+        status: license.status || "active",
+        license_type: license.licenseType || "Unknown",
+        issue_date: license.issueDate || "",
+        expiration_date: license.expirationDate || "",
+        specialty_endorsements: license.specialtyEndorsements || [],
+        disciplinary_actions: license.disciplinaryActions || [],
+        verified_at: license.verifiedAt,
+        source: src === "statecred" ? "StateCred API" : src === "dbpr_csv" ? "DBPR Records" : "Mock Data",
+        created_at: license.verifiedAt,
       };
-    } else {
-      // Unknown but valid-format license — generate a plausible mock result
-      const prefix = trimmed.substring(0, 2);
-      const isES = prefix === "ES";
-      record = {
-        id: "",
-        user_id: "",
-        license_number: trimmed,
-        business_name: isES
-          ? `Licensed Screen Contractor #${trimmed}`
-          : `Licensed Contractor #${trimmed}`,
-        status: "active",
-        license_type: isES
-          ? "Structure - Screen Enclosure Specialty"
-          : "Certified General Contractor",
-        issue_date: "2024-06-01",
-        expiration_date: "2026-08-31",
-        specialty_endorsements: isES ? ["Screen Enclosure"] : ["General Contractor"],
-        disciplinary_actions: [],
-        verified_at: now,
-        source: "FL DBPR (Mock)",
-        created_at: now,
-      };
-    }
 
-    // Save to localStorage
-    const saveResult = saveLicenseVerification({
-      license_number: record.license_number,
-      business_name: record.business_name,
-      status: record.status,
-      license_type: record.license_type,
-      issue_date: record.issue_date,
-      expiration_date: record.expiration_date,
-      specialty_endorsements: record.specialty_endorsements,
-      disciplinary_actions: record.disciplinary_actions,
-      verified_at: record.verified_at,
-      source: record.source,
-    });
+      // Save to localStorage
+      const saveResult = saveLicenseVerification({
+        license_number: record.license_number,
+        business_name: record.business_name,
+        status: record.status,
+        license_type: record.license_type,
+        issue_date: record.issue_date,
+        expiration_date: record.expiration_date,
+        specialty_endorsements: record.specialty_endorsements,
+        disciplinary_actions: record.disciplinary_actions,
+        verified_at: record.verified_at,
+        source: record.source,
+      });
 
-    if (saveResult.success) {
-      record.id = saveResult.id!;
-      setResult(record);
-      // Refresh history
-      setHistory(getLicenseVerifications());
-    } else {
-      // Still show the result even if save fails
-      setResult(record);
+      if (saveResult.success) {
+        record.id = saveResult.id!;
+        setResult(record);
+        setHistory(getLicenseVerifications());
+      } else {
+        setResult(record);
+      }
+    } catch (err) {
+      setError("Verification request failed. Please try again.");
     }
 
     setVerifying(false);
@@ -281,11 +224,14 @@ export default function LicensesPage() {
             <div className="flex items-center gap-2 mb-4">
               <div className={`w-3 h-3 ${getLicenseStatusDot(result.status)} rounded-full`}></div>
               <h2 className="font-semibold">Verification Result</h2>
-              {result.source.includes("Mock") && (
-                <span className="text-xs bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full">
-                  Mock Data
-                </span>
-              )}
+              {resultSource && (() => {
+                const { label, className } = sourceLabel(resultSource);
+                return (
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${className}`}>
+                    {label}
+                  </span>
+                );
+              })()}
             </div>
 
             <div className="space-y-4">
@@ -311,11 +257,11 @@ export default function LicensesPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Issue Date</p>
-                  <p className="font-medium">{result.issue_date}</p>
+                  <p className="font-medium">{result.issue_date || "N/A"}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Expiration Date</p>
-                  <p className="font-medium">{result.expiration_date}</p>
+                  <p className="font-medium">{result.expiration_date || "N/A"}</p>
                 </div>
               </div>
 

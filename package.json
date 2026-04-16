@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "sync-dbpr": "npx tsx scripts/sync-dbpr.ts",
+    "build": "npm run sync-dbpr && next build",
+    "build:skip-sync": "next build",
     "start": "next start",
     "lint": "eslint"
   },

@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
 import { validateLicenseFormat, generateMockDBPRData } from "@/lib/dbpr-mock";
+import { verifyLicenseWithStateCred } from "@/lib/statecred";
+import { lookupLicenseInLocalData } from "@/lib/dbpr-csv-sync";
 
 // ============================================
 // POST /api/verify-license
 // Verifies a Florida contractor license number.
-// In demo mode (placeholder Supabase URL), returns mock data.
-// In production, will scrape real DBPR site (TODO).
+//
+// Verification chain (in order):
+//   1. Format validation
+//   2. StateCred API (if STATECRED_API_KEY is set)
+//   3. Local CSV index (if data/fl-licenses.json exists)
+//   4. Mock data (fallback — always available)
 // ============================================
-
-function isDemoMode(): boolean {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return !url || url.includes("placeholder");
-}
 
 export async function POST(request: Request) {
   // Parse request body
@@ -44,48 +45,60 @@ export async function POST(request: Request) {
 
   const normalized = validation.normalized!;
 
-  // Demo mode: return mock data
-  if (isDemoMode()) {
-    const mock = generateMockDBPRData(normalized);
+  // --- Attempt 1: StateCred API ---
+  const stateCredResult = await verifyLicenseWithStateCred(normalized);
+  if (stateCredResult) {
     return NextResponse.json({
       success: true,
-      source: "mock",
+      source: "statecred",
       license: {
-        licenseNumber: mock.licenseNumber,
-        businessName: mock.businessName,
-        status: mock.status,
-        licenseType: mock.licenseType,
-        issueDate: mock.issueDate,
-        expirationDate: mock.expirationDate,
-        specialtyEndorsements: mock.specialtyEndorsements,
-        disciplinaryActions: mock.disciplinaryActions,
+        licenseNumber: stateCredResult.license_number,
+        businessName: stateCredResult.licensee_name,
+        status: stateCredResult.status,
+        licenseType: stateCredResult.profession,
+        issueDate: null, // StateCred doesn't provide original issue date
+        expirationDate: stateCredResult.expiration_date,
+        specialtyEndorsements: [], // Not provided by StateCred
+        disciplinaryActions: [], // Not provided by StateCred
         verifiedAt: new Date().toISOString(),
       },
     });
   }
 
-  // Production mode: real DBPR verification
-  // TODO: Implement scraping of https://www.myfloridalicense.com/
-  // The DBPR site uses a multi-step ASP form with session management.
-  // Full implementation requires:
-  //   1. GET the search form page to obtain session cookies
-  //   2. POST the search form with the license number
-  //   3. Parse the result page for license details
-  //   4. Follow the license detail link for full information
-  // For now, return a placeholder indicating this is coming soon.
+  // --- Attempt 2: Local CSV index ---
+  const localResult = await lookupLicenseInLocalData(normalized);
+  if (localResult) {
+    return NextResponse.json({
+      success: true,
+      source: "dbpr_csv",
+      license: {
+        licenseNumber: localResult.license_number,
+        businessName: localResult.licensee_name,
+        status: localResult.status,
+        licenseType: localResult.license_type_code,
+        issueDate: null,
+        expirationDate: localResult.expiration_date,
+        specialtyEndorsements: [],
+        disciplinaryActions: [],
+        verifiedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  // --- Attempt 3: Mock data (always available) ---
+  const mock = generateMockDBPRData(normalized);
   return NextResponse.json({
-    success: false,
-    source: "dbpr",
-    error: "Real DBPR verification is not yet implemented. Please use demo mode for mock data.",
+    success: true,
+    source: "mock",
     license: {
-      licenseNumber: normalized,
-      businessName: null,
-      status: null,
-      licenseType: null,
-      issueDate: null,
-      expirationDate: null,
-      specialtyEndorsements: [],
-      disciplinaryActions: [],
+      licenseNumber: mock.licenseNumber,
+      businessName: mock.businessName,
+      status: mock.status,
+      licenseType: mock.licenseType,
+      issueDate: mock.issueDate,
+      expirationDate: mock.expirationDate,
+      specialtyEndorsements: mock.specialtyEndorsements,
+      disciplinaryActions: mock.disciplinaryActions,
       verifiedAt: new Date().toISOString(),
     },
   });
