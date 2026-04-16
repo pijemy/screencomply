@@ -1,6 +1,32 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { loginWithEmail } from "@/app/actions/auth";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    const result = await loginWithEmail(email, password);
+
+    if (result.success) {
+      router.push("/dashboard");
+    } else {
+      setError(result.error ?? "Login failed");
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
@@ -18,7 +44,13 @@ export default function LoginPage() {
           Log in to your account
         </p>
 
-        <form className="space-y-4">
+        {error && (
+          <div className="mb-4 p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <label htmlFor="email" className="text-sm font-medium">
               Email
@@ -27,8 +59,11 @@ export default function LoginPage() {
               id="email"
               type="email"
               placeholder="you@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full px-3 py-2 border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               required
+              disabled={loading}
             />
           </div>
           <div className="space-y-2">
@@ -39,15 +74,19 @@ export default function LoginPage() {
               id="password"
               type="password"
               placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
               className="w-full px-3 py-2 border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               required
+              disabled={loading}
             />
           </div>
           <button
             type="submit"
-            className="w-full bg-primary text-primary-foreground py-2 rounded-md font-medium hover:bg-primary/90"
+            disabled={loading}
+            className="w-full bg-primary text-primary-foreground py-2 rounded-md font-medium hover:bg-primary/90 disabled:opacity-50"
           >
-            Log in
+            {loading ? "Logging in..." : "Log in"}
           </button>
         </form>
 

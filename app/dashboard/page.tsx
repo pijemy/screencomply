@@ -1,3 +1,6 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Shield,
@@ -5,9 +8,34 @@ import {
   Building,
   FolderKanban,
   Plus,
+  Loader2,
 } from "lucide-react";
+import { getProjects } from "@/lib/store";
+import type { ProjectRow } from "@/lib/store";
+import { COUNTY_NAMES, PROJECT_TYPE_LABELS } from "@/lib/types";
 
 export default function DashboardPage() {
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    try {
+      const data = getProjects();
+      setProjects(data);
+    } catch {
+      // handle gracefully
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const activeCount = projects.filter((p) => p.status === "active").length;
+  const draftCount = projects.filter((p) => p.status === "draft").length;
+  const completedCount = projects.filter((p) => p.status === "completed").length;
+  const totalComplianceItems = projects.reduce((sum, p) => sum + p.checklist.length, 0);
+
+  const recentProjects = projects.slice(0, 5);
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -66,10 +94,10 @@ export default function DashboardPage() {
         {/* Stats Cards */}
         <div className="grid md:grid-cols-4 gap-4 mb-8">
           {[
-            { label: "Active Projects", value: "0", icon: FolderKanban, color: "text-blue-600" },
-            { label: "Licenses Verified", value: "0", icon: Shield, color: "text-green-600" },
-            { label: "Permits Tracked", value: "0", icon: ClipboardList, color: "text-orange-600" },
-            { label: "Compliance Items", value: "0", icon: Building, color: "text-purple-600" },
+            { label: "Active Projects", value: loading ? "—" : String(activeCount), icon: FolderKanban, color: "text-blue-600" },
+            { label: "Draft Projects", value: loading ? "—" : String(draftCount), icon: Shield, color: "text-green-600" },
+            { label: "Completed", value: loading ? "—" : String(completedCount), icon: ClipboardList, color: "text-orange-600" },
+            { label: "Compliance Items", value: loading ? "—" : String(totalComplianceItems), icon: Building, color: "text-purple-600" },
           ].map((stat) => (
             <div key={stat.label} className="border rounded-lg p-4">
               <div className="flex items-center gap-3">
@@ -125,21 +153,81 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        {/* Recent Projects (empty state) */}
-        <div className="border rounded-lg p-8 text-center">
-          <FolderKanban className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="font-semibold mb-1">No projects yet</h3>
-          <p className="text-sm text-muted-foreground mb-4">
-            Create your first project to start tracking compliance.
-          </p>
-          <Link
-            href="/projects/new"
-            className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-primary/90 inline-flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Create Your First Project
-          </Link>
-        </div>
+        {/* Recent Projects */}
+        {loading ? (
+          <div className="border rounded-lg p-8 text-center">
+            <Loader2 className="w-8 h-8 text-muted-foreground mx-auto mb-4 animate-spin" />
+            <p className="text-muted-foreground">Loading projects...</p>
+          </div>
+        ) : recentProjects.length === 0 ? (
+          <div className="border rounded-lg p-8 text-center">
+            <FolderKanban className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="font-semibold mb-1">No projects yet</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Create your first project to start tracking compliance.
+            </p>
+            <Link
+              href="/projects/new"
+              className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-primary/90 inline-flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Create Your First Project
+            </Link>
+          </div>
+        ) : (
+          <div className="border rounded-lg">
+            <div className="px-6 py-4 border-b">
+              <h3 className="font-semibold">Recent Projects</h3>
+            </div>
+            <div className="divide-y">
+              {recentProjects.map((project) => {
+                const required = project.checklist.filter((i) => i.required);
+                const completed = required.filter((i) => i.status === "complete").length;
+                const total = required.length;
+                const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+                return (
+                  <Link
+                    key={project.id}
+                    href={`/projects/${project.id}`}
+                    className="px-6 py-4 flex items-center justify-between hover:bg-accent/50 transition-colors"
+                  >
+                    <div>
+                      <p className="font-medium">{project.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {COUNTY_NAMES[project.county]} · {PROJECT_TYPE_LABELS[project.project_type]}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-24 bg-muted rounded-full h-2">
+                          <div
+                            className="bg-primary rounded-full h-2"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="text-sm text-muted-foreground">{pct}%</span>
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        project.status === "active" ? "bg-green-100 text-green-800" :
+                        project.status === "draft" ? "bg-yellow-100 text-yellow-800" :
+                        project.status === "completed" ? "bg-blue-100 text-blue-800" :
+                        "bg-gray-100 text-gray-800"
+                      }`}>
+                        {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+                      </span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+            <div className="px-6 py-3 border-t">
+              <Link href="/projects" className="text-sm text-primary hover:underline">
+                View all projects →
+              </Link>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

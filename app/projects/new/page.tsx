@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Shield, ArrowLeft, ArrowRight, CheckCircle2, Circle } from "lucide-react";
+import { Shield, ArrowLeft, ArrowRight, CheckCircle2, Circle, Loader2 } from "lucide-react";
 import { FloridaCounty, ProjectType, COUNTY_NAMES, PROJECT_TYPE_LABELS, ComplianceChecklistItem } from "@/lib/types";
 import { getPermitsForProject, calculateTotalFees } from "@/lib/permit-data";
+import { createProject } from "@/lib/store";
 
 function generateChecklist(
   county: FloridaCounty,
@@ -130,6 +131,9 @@ export default function NewProjectPage() {
   const [projectName, setProjectName] = useState("");
   const [address, setAddress] = useState("");
   const [checklist, setChecklist] = useState<ComplianceChecklistItem[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
 
   function handleGenerateChecklist() {
     const items = generateChecklist(county, projectType);
@@ -149,6 +153,28 @@ export default function NewProjectPage() {
           : item
       )
     );
+  }
+
+  async function handleSaveProject() {
+    setSaving(true);
+    setSaveError(null);
+
+    const result = await createProject({
+      name: projectName || "Untitled Project",
+      address: address || "No address specified",
+      county,
+      projectType,
+      checklist,
+    });
+
+    if (result.success && result.projectId) {
+      setCreatedProjectId(result.projectId);
+      setStep(2);
+    } else {
+      setSaveError(result.error || "Failed to create project. Please try again.");
+    }
+
+    setSaving(false);
   }
 
   const totalFees = calculateTotalFees(
@@ -396,6 +422,12 @@ export default function NewProjectPage() {
               );
             })}
 
+            {saveError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 text-sm text-red-700">
+                {saveError}
+              </div>
+            )}
+
             <div className="flex justify-between mt-8">
               <button
                 onClick={() => setStep(0)}
@@ -405,11 +437,21 @@ export default function NewProjectPage() {
                 Back
               </button>
               <button
-                onClick={() => setStep(2)}
-                className="bg-primary text-primary-foreground px-6 py-2 rounded-md font-medium hover:bg-primary/90 flex items-center gap-2"
+                onClick={handleSaveProject}
+                disabled={saving}
+                className="bg-primary text-primary-foreground px-6 py-2 rounded-md font-medium hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Save Project
-                <ArrowRight className="w-4 h-4" />
+                {saving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    Save Project
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -435,12 +477,10 @@ export default function NewProjectPage() {
                 <p><span className="text-muted-foreground">Total items:</span> {checklist.length}</p>
                 <p><span className="text-muted-foreground">Required:</span> {checklist.filter((i) => i.required).length}</p>
                 <p><span className="text-muted-foreground">Est. permit fees:</span> ${totalFees}</p>
+                {createdProjectId && (
+                  <p><span className="text-muted-foreground">Project ID:</span> <code className="text-xs bg-muted px-1 py-0.5 rounded">{createdProjectId}</code></p>
+                )}
               </div>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-sm text-blue-700">
-              <strong>Note:</strong> Sign up to save projects permanently and track your compliance progress over time. 
-              This demo shows the full checklist workflow.
             </div>
 
             <div className="flex justify-center gap-4">
@@ -450,12 +490,22 @@ export default function NewProjectPage() {
               >
                 Back to Dashboard
               </Link>
+              {createdProjectId && (
+                <Link
+                  href={`/projects/${createdProjectId}`}
+                  className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-primary/90"
+                >
+                  View Project
+                </Link>
+              )}
               <button
                 onClick={() => {
                   setStep(0);
                   setChecklist([]);
                   setProjectName("");
                   setAddress("");
+                  setCreatedProjectId(null);
+                  setSaveError(null);
                 }}
                 className="bg-primary text-primary-foreground px-4 py-2 rounded-md text-sm font-medium hover:bg-primary/90"
               >
