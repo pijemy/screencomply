@@ -1,10 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { signupWithEmail } from "@/app/actions/auth";
+import { useAuth } from "@/lib/auth-context";
+import { useLocalStorage } from "@/lib/store-flag";
 
 export default function SignupPage() {
+  const router = useRouter();
+  const { signup } = useAuth();
+  const isDemo = useLocalStorage();
   const [fullName, setFullName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [email, setEmail] = useState("");
@@ -19,16 +24,21 @@ export default function SignupPage() {
     setError(null);
     setLoading(true);
 
-    const result = await signupWithEmail(
+    const result = await signup({
       email,
       password,
-      fullName,
-      companyName || undefined,
-      license || undefined
-    );
+      full_name: fullName,
+      company_name: companyName || undefined,
+      license_number: license || undefined,
+    });
 
     if (result.success) {
-      setSuccess(true);
+      if (isDemo) {
+        // In demo mode, go straight to dashboard
+        router.push("/dashboard");
+      } else {
+        setSuccess(true);
+      }
     } else {
       setError(result.error ?? "Signup failed");
     }

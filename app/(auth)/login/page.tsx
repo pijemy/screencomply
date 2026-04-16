@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { loginWithEmail } from "@/app/actions/auth";
+import { useAuth } from "@/lib/auth-context";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +18,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
-    const result = await loginWithEmail(email, password);
+    const result = await login(email, password);
 
     if (result.success) {
       router.push("/dashboard");

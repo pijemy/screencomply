@@ -13,8 +13,11 @@ import {
 import { getProjects } from "@/lib/store";
 import type { ProjectRow } from "@/lib/store";
 import { COUNTY_NAMES, PROJECT_TYPE_LABELS } from "@/lib/types";
+import { useAuth } from "@/lib/auth-context";
+import { getUserInitials } from "@/lib/auth-store";
 
 export default function DashboardPage() {
+  const { user, signOut } = useAuth();
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -65,9 +68,17 @@ export default function DashboardPage() {
             </Link>
           </nav>
           <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">Demo User</span>
+            <span className="text-sm text-muted-foreground">
+              {user ? (user.full_name || user.email) : "Demo User"}
+            </span>
+            <button
+              onClick={() => signOut()}
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Sign out
+            </button>
             <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center text-xs font-medium">
-              DU
+              {user ? getUserInitials(user) : "DU"}
             </div>
           </div>
         </div>
